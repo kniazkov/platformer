@@ -36,7 +36,11 @@ jobs:
       - name: Настройка экспорта Android
         run: |
           mkdir -p "$HOME/.local/share/godot/keystores" "$HOME/.config/godot"
-          keytool -genkeypair -keystore "$HOME/.local/share/godot/keystores/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -validity 10000
+          # Godot's import step may already have generated this debug keystore.
+          if [ ! -f "$HOME/.local/share/godot/keystores/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.local/share/godot/keystores/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -validity 10000
+          fi
+          keytool -list -keystore "$HOME/.local/share/godot/keystores/debug.keystore" -storepass android -alias androiddebugkey
           python3 - <<'PY'
           import os
           from pathlib import Path
