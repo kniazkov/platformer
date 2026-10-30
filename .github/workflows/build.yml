@@ -1,0 +1,69 @@
+name: Проверка и сборка прототипа
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.4.1
+          use-dotnet: false
+          include-templates: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          # Override the action's default: the legacy 'tools' package was removed.
+          packages: 'platform-tools build-tools;35.0.0 platforms;android-35'
+      - name: Импорт и проверки
+        run: |
+          godot --headless --editor --import --quit
+          godot --headless --script tests/smoke.gd
+          godot --headless --script tests/traversal.gd
+      - name: Настройка экспорта Android
+        run: |
+          mkdir -p "$HOME/.local/share/godot/keystores" "$HOME/.config/godot"
+          # Godot's import step may already have generated this debug keystore.
+          if [ ! -f "$HOME/.local/share/godot/keystores/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.local/share/godot/keystores/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -validity 10000
+          fi
+          keytool -list -keystore "$HOME/.local/share/godot/keystores/debug.keystore" -storepass android -alias androiddebugkey
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path.home() / '.config/godot/editor_settings-4.4.tres'
+          p.write_text('[gd_resource type="EditorSettings" format=3]\n[resource]\n'
+              + 'export/android/android_sdk_path = "' + os.environ['ANDROID_HOME'] + '"\n'
+              + 'export/android/java_sdk_path = "' + os.environ['JAVA_HOME'] + '"\n'
+              + 'export/android/debug_keystore = "' + str(Path.home() / '.local/share/godot/keystores/debug.keystore') + '"\n')
+          PY
+      - name: Сборки
+        run: |
+          mkdir -p build/{windows,linux,macos,android}
+          godot --headless --export-release Windows
+          godot --headless --export-release Linux
+          godot --headless --export-release macOS
+          godot --headless --export-debug Android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platformer-prototype
+          path: |
+            build/windows/Golda.exe
+            build/linux/Golda.x86_64
+            build/macos/Golda.zip
+            build/android/Golda.apk
+          retention-days: 7
+          if-no-files-found: error
